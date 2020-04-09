@@ -12,6 +12,6 @@ MQTT_PWD = '<mqtt_password>'
 TOPIC_IN = (MQTT_CLIENT_ID + '/in').encode()
 TOPIC_OUT = (MQTT_CLIENT_ID + '/out').encode()
 
-LED = {'GPIO': 13, 'ON': 0}
-RELAY = {'GPIO': 12, 'ON': 1}
-BUTTON = {'GPIO': 0, 'ON': 0}
+LED = {'gpio': 13, 'on': 0}
+RELAY = {'gpio': 12, 'on': 1}
+BUTTON = {'gpio': 0, 'on': 0}
