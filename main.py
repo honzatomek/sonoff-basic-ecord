@@ -44,13 +44,13 @@ def connect():
     sta.config(dhcp_hostname=WIFI_HOST)
     sta.active(True)
     sta.connect(WIFI_SSID, WIFI_PASS)
-    
+
 #     for t in range(10):
 #         sleep_ms(10 * t)
 #         if sta.isconnected():
 #             gpio(LED, 'blink', 3, 500)
 #             return True
-#     
+#
 #     gpio(LED, 'on')
 #     return False
 
@@ -95,7 +95,7 @@ def publish(value):
     global mqtt
     mqtt.publish(TOPIC_OUT, value.encode())
 
-    
+
 # ---------------------------------------------- program ---
 with open('relay_state', 'r') as rst:
     gpio(RELAY, rst.readline().strip('\n'))
