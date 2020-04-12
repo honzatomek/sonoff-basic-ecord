@@ -4,3 +4,4 @@
 !*config_example*
 *.pyc
 *.swp
+.idea/**
