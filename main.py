@@ -1,167 +1,67 @@
-# ---------------------------------- micropython modules ---            # {{{1
-import machine
-import network
-import uos
-import ubinascii
-from utime import sleep_ms
+from machine import Timer
 from umqtt.robust import MQTTClient
-
-# --------------------------------------- custom modules ---            # {{{1
+from utime import sleep_ms
 from config import *
+from wifi import WiFi
+from sonoff import Sonoff
 
-
-# ---------------------------------------------- classes ---
-class WiFi:                                                             # {{{1
-    def __init__(self, ssid, password, hostname):                       # {{{2
-        network.WLAN(network.AP_IF).active(False)
-
-        self.ssid = ssid
-        self.pwd = password
-
-        self.sta = network.WLAN(network.STA_IF)
-        self.mac = ubinascii.hexlify(network.WLAN().config('mac'),'').decode()
-        self.hostname = hostname + self.mac[-4:]
-
-        self.sta.config(dhcp_hostname=hostname + self.mac[-4:])
-
-    def connect(self, delay=200, blink=None):                           # {{{2
-        for i in range(5):
-            if not self.sta.isconnected():
-                if not self.sta.active():
-                    self.sta.active(True)
-                self.sta.connect(self.ssid, self.pwd)
-                sleep_ms(delay)
-            else:
-                if blink is not None:
-                    blink(3, 250)
-                return True
-        if blink is not None:
-            blink(1, 2000)
-        return False
-
-
-class Sonoff:                                                           # {{{1
-    def __init__(self, name='sonoff'):                                  # {{{2
-        self.name = name
-
-        self.led = machine.Pin(LED['gpio'],
-                               machine.Pin.OUT,
-                               value=(1 - LED['on']))
-
-        self.button = machine.Pin(BUTTON['gpio'], machine.Pin.IN)
-        self.button.irq(trigger=machine.Pin.IRQ_FALLING,
-                        handler=self.button_cb)
-
-        self.relay_value = self.load_state()
-        self.relay = machine.Pin(RELAY['gpio'],
-                                 machine.Pin.OUT,
-                                 value=self.relay_value)
-
-        self.timer = machine.Timer(0)
-        self.timer.init(period=RTIMER_DELAY,
-                        mode=machine.Timer.PERIODIC,
-                        callback=self.check)
-
-        self.wifi = None
-        self.mqtt = None
-
-    def blink(self, count=BLINK_COUNT, delay=BLINK_DELAY):  # {{{2
-        for i in range(2 * count - 1):
-            self.led.value(not self.led.value())
-            sleep_ms(delay)
-        self.led.value(1 - LED['on'])
-
-    def button_cb(self, pin=None):                                      # {{{2
-        bval = self.button.value()
-        for i in range(11):
-            sleep_ms(250)
-            if self.button.value() != bval:
-                self.blink()
-                self.switch()
-                return
-        self.reset()
-
-    def load_state(self):                                               # {{{2
-        try:
-            with open(RSAVE, 'r') as rst:
-                return int(rst.readline().strip('\n'))
-        except Exception as e:
-            self.relay_value = 0
-            self.save_state()
-            return 0
-
-    def save_state(self):                                               # {{{2
-        with open(RSAVE, 'w') as rst:
-            rst.write(str(self.relay_value))
-
-    def check(self, timer=None):                                                    # {{{2
-        if self.relay.value() != self.relay_value:
-            self.relay.value(self.relay_value)
-
-    def switch(self, value=None):                                       # {{{2
-        if value is None or value == 2:
-            self.relay.value(not self.relay.value())
-        elif value == 1:
-            self.relay.value(RELAY['on'])
-        elif value == 0:
-            self.relay.value(1 - RELAY['on'])
-        self.relay_value = self.relay.value()
-        if self.mqtt is not None:
-            mqtt_publish(self.relay_value)
-
-    def reset(self):                                                    # {{{2
-        self.save_state()
-        self.blink(3)
-        machine.reset()
-
-    def connect(self):
-        pass
-
-
-# -------------------------------------------- functions ---
-def mqtt_subscribe(topic, msg):                                         # {{{1
+def check_wifi(timer=None):
     global s
+    global w
+    if w.isconnected():
+        s.blink()
+    else:
+        try:
+            w.connect()
+        except Exception as e:
+            print(e)
+
+def mqtt_callback(topic, msg):
+    topic = topic.decode()
     msg = msg.decode()
-    if msg in [0, 1, 2]:
-        s.switch(msg)
+    global s
+    global m
+    if msg == '0':
+        s.switch(0)
+    elif msg == '1':
+        s.switch(1)
+    elif msg == '2':
+        s.switch()
     elif msg == 'state':
-        mqtt_publish(s.relay_value)
+        m.publish(MQTT_TOPIC_OUT, str(s.state()).encode())
     elif msg == 'blink':
-        s.blink(3, 250)
+        s.blink()
     elif msg == 'reset':
         s.reset()
 
+sleep_ms(2000)
+w = WiFi(WIFI_SSID, WIFI_PASS)
+w.set_hostname(WIFI_HOST, -4)
+MQTT_TOPIC_IN = str(w.hostname() + MQTT_TOPIC_IN).encode()
+MQTT_TOPIC_OUT = str(w.hostname() + MQTT_TOPIC_OUT).encode()
+try:
+    w.connect()
+except Exception as e:
+    print(e)
 
-def mqtt_publish(message):                                              # {{{1
-    global s
-    topic = s.mqtt.client_id + '/out'
-    s.mqtt.publish(topic.encode(), message.encode())
+w_t = Timer(0)
+w_t.init(period=5000, mode=Timer.PERIODIC, callback=check_wifi)
 
+s = Sonoff()
+s.load()
 
-# ---------------------------------------------- program ---            # }}}1
-sleep_ms(1000)
-s = Sonoff(NAME)
-s.load_state()
-w = WiFi(WIFI_SSID, WIFI_PASS, s.name)
-w.connect(blink=s.blink)
-WIFI_HOST = w.hostname
-MQTT_CLIENT_ID = w.hostname
+m = MQTTClient(w.hostname(), MQTT_BROKER, MQTT_PORT)
+m.set_callback(mqtt_callback)
+m.connect()
+m.subscribe(MQTT_TOPIC_IN)
 
-s.mqtt = MQTTClient(MQTT_CLIENT_ID, MQTT_BROKER, port=MQTT_PORT,
-                    user=MQTT_UNAME, password=MQTT_PASS)
-s.mqtt.set_callback(mqtt_subscribe)
-s.mqtt.connect(clean_session=False)
-TOPIC_IN = s.mqtt.client_id + '/in'
-s.mqtt.subscribe(TOPIC_IN.encode())
+s.set_mqtt(MQTT_TOPIC_OUT, m.publish)
 
-mqtt_publish(s.relay_value)
+s_t = Timer(1)
+s_t.init(period=500, mode=Timer.PERIODIC, callback=s.check_relay)
+
+m.publish(MQTT_TOPIC_OUT, str(s.state()).encode())
 while True:
-    try:
-        s.mqtt.check_msg()
-        sleep_ms(MQTT_DELAY)
-    except Exception as e:
-        break
+    m.wait_msg()
 
 s.reset()
-
-# vim:fdm=marker:fdl=1:
