@@ -1,5 +1,5 @@
 from machine import Timer
-from umqtt.robust import MQTTClient
+from umqtt.simple import MQTTClient
 from utime import sleep_ms
 from config import *
 from wifi import WiFi
@@ -35,6 +35,9 @@ def mqtt_callback(topic, msg):
         s.reset()
 
 sleep_ms(2000)
+s = Sonoff()
+s.load()
+
 w = WiFi(WIFI_SSID, WIFI_PASS)
 w.set_hostname(WIFI_HOST, -4)
 MQTT_TOPIC_IN = str(w.hostname() + MQTT_TOPIC_IN).encode()
@@ -46,9 +49,6 @@ except Exception as e:
 
 w_t = Timer(0)
 w_t.init(period=5000, mode=Timer.PERIODIC, callback=check_wifi)
-
-s = Sonoff()
-s.load()
 
 m = MQTTClient(w.hostname(), MQTT_BROKER, MQTT_PORT)
 m.set_callback(mqtt_callback)
@@ -62,6 +62,14 @@ s_t.init(period=500, mode=Timer.PERIODIC, callback=s.check_relay)
 
 m.publish(MQTT_TOPIC_OUT, str(s.state()).encode())
 while True:
-    m.wait_msg()
+    try:
+        # m.wait_msg()
+        m.publish(MQTT_TOPIC_OUT, str(s.state()).encode())
+        m.check_msg()
+        sleep_ms(100)
+    except Exception as e:
+        print(e)
+        m.connect()
+        m.subscribe(MQTT_TOPIC_IN)
 
 s.reset()
