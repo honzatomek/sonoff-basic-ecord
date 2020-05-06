@@ -61,12 +61,18 @@ s_t = Timer(1)
 s_t.init(period=500, mode=Timer.PERIODIC, callback=s.check_relay)
 
 m.publish(MQTT_TOPIC_OUT, str(s.state()).encode())
-while True:
+i = 0
+# while True:
+SLEEP = 200
+for i in range(int(SLEEP/1000) * 60): # * 60 * 2)
     try:
         # m.wait_msg()
-        m.publish(MQTT_TOPIC_OUT, str(s.state()).encode())
+#         i += 1
         m.check_msg()
-        sleep_ms(100)
+        if i % 20 == 0:
+            m.publish(MQTT_TOPIC_OUT, str(s.state()).encode())
+            i = 0
+        sleep_ms(200)
     except Exception as e:
         print(e)
         m.connect()
