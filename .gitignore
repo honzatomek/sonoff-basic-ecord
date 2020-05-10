@@ -1,6 +1,6 @@
 *cfg*
 !*cfg_example*
-*config*
+config.py
 !*config_example*
 *.pyc
 *.swp

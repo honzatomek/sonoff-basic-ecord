@@ -6,6 +6,9 @@ from utime import sleep_ms
 from ubinascii import hexlify
 from uos import listdir
 
+import webrepl
+webrepl.start()
+
 HOST = 'snf'
 
 SSID = 'honza+eliska'
@@ -31,7 +34,7 @@ def load():
     global SAVE
     global REL
     try:
-        with open(SAVE, 'r') as sfile:
+        with open(SAVE, 'r', encoding='utf-8') as sfile:
             return int(sfile.read())
     except Exception as e:
         print(e)
@@ -40,8 +43,8 @@ def load():
 def save():
     global SAVE
     global REL
-    with open(SAVE, 'w') as sfile:
-        sfile.write(Pin(REL['pin']).value())
+    with open(SAVE, 'w', encoding='utf-8') as sfile:
+        sfile.write(str(Pin(REL['pin']).value()))
 
 def blink(count=1, delay=250):
     global C
@@ -55,6 +58,7 @@ def blink(count=1, delay=250):
 def switch(value=2):
     global C
     global REL
+    global MC
     if value == 0:
         C['REL'].value(REL['off'])
     elif value == 1:
@@ -64,6 +68,9 @@ def switch(value=2):
     else:
         C['REL'].value(REL['off'])
     REL['state'] = C['REL'].value()
+    save()
+    if MC:
+        MC.publish(TOPO.encode(), str(state()).encode())
 
 def state():
     global C
@@ -135,23 +142,21 @@ def mconnect(do_blink=True):
 def mqtt_callback(topic, msg):
     global MC
     global TOPO
+    global REL
     topic = topic.decode()
     msg = msg.decode()
-    if msg == '0':
-        switch(0)
-    elif msg == '1':
-        switch(1)
+    if msg in ['0', '1']:
+        REL['state'] = int(REL['on'] == int(msg))
     elif msg == '2':
-        switch(2)
+        REL['state'] = 1 - REL['state']
     elif msg == 'blink':
         blink()
     elif msg == 'reset':
         reset()
     elif msg == 'state':
-        pass
+        MC.publish(TOPO.encode(), str(state()).encode())
     else:
         return
-    MC.publish(TOPO.encode(), str(state()).encode())
 
 
 # assign controls
@@ -164,8 +169,8 @@ print('[+] Controls assigned.')
 
 # set control callbacks
 C['BTN'].irq(trigger=Pin.IRQ_FALLING, handler=button_press)
-# t_check = Timer(0)
-# t_check.init(period=500, mode=Timer.PERIODIC, callback=check)
+t_check = Timer(0)
+t_check.init(period=200, mode=Timer.PERIODIC, callback=check)
 print('[+] Control callbacks set.')
 
 # connect to WiFi
@@ -187,17 +192,20 @@ MC.set_callback(mqtt_callback)
 mconnect()
 
 # main loop
-for i in range(int(1000/DELAY) * 60 * 60 * 2):  # last only 2 hours, then reset
+# for i in range(int(1000/DELAY) * 60 * 60 * 2):  # last only 2 hours, then reset
+while True:
     try:
-        sleep_ms(DELAY)
-        check()
-        if i % int(5000/DELAY) == 0:  # each 5 seconds
-            MC.publish(TOPO.encode(), str(state()).encode())
-        MC.check_msg()
+#         sleep_ms(DELAY)
+#         check()
+#         if i % int(5000/DELAY) == 0:  # each 5 seconds
+#             MC.publish(TOPO.encode(), str(state()).encode())
+#         MC.check_msg()
+        MC.wait_msg()
     except Exception as e:
         print(e)
-        connect()
-        mconnect()
+#         connect()
+#         mconnect()
+        break
 
 # reset when main loop ends
 reset()
