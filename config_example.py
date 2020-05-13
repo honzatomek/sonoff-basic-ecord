@@ -1,15 +1,14 @@
 # example of config.py file, input correct values and rename
-WIFI_HOST = 'snf'
-WIFI_SSID = '<wifi_ssid>'
-WIFI_PASS = '<wifi_password>'
+WLAN_HOST = 'snf'
+WLAN_SSID = '<wifi_ssid>'
+WLAN_PASS = '<wifi_password>'
+WLAN_RTRY = 3       # number of retries for wlan connection to WLAN_SSID
+WLAN_DLAY = 5000    # delay in ms to wait for successful connection to WLAN_SSID in one try
 
-MQTT_CLIENT_ID = WIFI_HOST
-MQTT_BROKER = 'xxx.xxx.xxx.xxx'
+MQTT_BRKR = 'xxx.xxx.xxx.xxx'
 MQTT_PORT = 1883
-MQTT_UNAME = None
+MQTT_UNAM = None
 MQTT_PASS = None
-MQTT_DELAY = 1000
 
-MQTT_TOPIC_IN = '/in'
-MQTT_TOPIC_OUT = '/out'
-
+MQTT_TPIN = '/in'
+MQTT_TPOU = '/out'

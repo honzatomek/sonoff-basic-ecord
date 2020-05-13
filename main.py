@@ -1,211 +1,44 @@
-from machine import Pin, Timer
-from machine import reset as __reset
-import network
-from umqtt.simple import MQTTClient
-from utime import sleep_ms
-from ubinascii import hexlify
-from uos import listdir
+import machine
+from wlan import *
+from config import *
 
-import webrepl
-webrepl.start()
+# uncomment if not located in boot.py for webrepl access, the access needs to be set up previously
+# import webrepl
+# webrepl.start()
 
-HOST = 'snf'
+# store button state (0 = pressed, 1 = not pressed)
+button_pressed = (machine.Pin(0, machine.Pin.IN).value() == 0)
 
-SSID = 'honza+eliska'
-PASS = 'nwuwoceww'
+# connect to wifi
+wlan = WLAN(WLAN_HOST, WLAN_PASS)
+wlan.set_hostname(WLAN_HOST)
+for i < WLAN_RTRY:
+  try:
+    if wlan.connect(delay=WLAN_DLAY):
+      print('[+] WLAN connected to {0} as {1}.'.format(WLAN_SSID, WLAN.ip()))
+      # blink 3 times to indicate wifi connected
+      for i in range(3 * 2 + 1):
+        machine.Pin(13).value(i % 2)
+        utime.sleep_ms(250)
+      break
+  except WLANException as e:
+    print(e)
+    print('[-] WLAN connection {0} to {1} not successful..'.format(i, WLAN_SSID))
+  except Exception as e:
+    print('[-] Unhandled Exception occured:\n    {0}\n    Resetting!'.format(e))
+    machine.reset()
 
-MQTT = '192.168.1.4'
-PORT = 1883
-TOPI = '/in'
-TOPO = '/out'
+# check if button was pressed upon boot
+if not button_pressed:
+  print('[+] Starting Sonoff Switch program..')
+  try:
+    import sonoff
+  except KeyboardInterrupt as e:
+    print('[-] Code run interrupted, exception:\n    {0}'.format(e))
+  except Exception as e:
+    print('[-] Unhandled Exception occured:\n    {0}\n    Resetting!'.format(e))
+    machine.reset()
+else:
+  print('[i] Button pressed upon boot.')
 
-LED = {'pin': 13, 'on': 0, 'off': 1}
-BTN = {'pin': 0, 'on': 0, 'off': 1}
-REL = {'pin': 12, 'on': 1, 'off': 0, 'state': None}
-
-C = {}       # controls
-STA = None   # Network Station
-MC = None    # MQTT Client
-DELAY = 200  # main loop delay [ms]
-
-SAVE = 'relay.save'
-
-def load():
-    global SAVE
-    global REL
-    try:
-        with open(SAVE, 'r', encoding='utf-8') as sfile:
-            return int(sfile.read())
-    except Exception as e:
-        print(e)
-        return Pin(REL['pin']).value()
-
-def save():
-    global SAVE
-    global REL
-    with open(SAVE, 'w', encoding='utf-8') as sfile:
-        sfile.write(str(Pin(REL['pin']).value()))
-
-def blink(count=1, delay=250):
-    global C
-    global LED
-    C['LED'].value(LED['off'])
-    for i in range(count * 2 - 1):
-        C['LED'].value(not C['LED'].value())
-        sleep_ms(delay)
-    C['LED'].value(LED['off'])
-
-def switch(value=2):
-    global C
-    global REL
-    global MC
-    if value == 0:
-        C['REL'].value(REL['off'])
-    elif value == 1:
-        C['REL'].value(REL['on'])
-    elif value == 2:
-        C['REL'].value(not C['REL'].value())
-    else:
-        C['REL'].value(REL['off'])
-    REL['state'] = C['REL'].value()
-    save()
-    if MC:
-        MC.publish(TOPO.encode(), str(state()).encode())
-
-def state():
-    global C
-    global REL
-    return int(C['REL'].value() == REL['on'])
-
-def reset():
-    blink(1, 1500)
-    save()
-    __reset()
-
-def button_press(pin=None):
-    global C
-    global BTN
-    i = 0
-    while C['BTN'].value() == BTN['on']:
-        sleep_ms(100)
-        i += 1
-    if i < int(30):
-        print('[+] button short press, switching.')
-        switch(2)
-    else:
-        print('[-] button long press, resetting..')
-        reset()
-
-def check(t=None):
-    global C
-    global REL
-    if C['REL'].value() != REL['state']:
-        switch(2)
-
-def connect(t=None):
-    global STA
-    if STA.isconnected():
-        blink()
-        return True
-    try:
-        STA.connect(SSID, PASS)
-        for i in range(10):
-            sleep_ms(500)
-            if STA.isconnected():
-                print('[+] WiFi connected to {0}. IP = {1}'.format(SSID, STA.ifconfig()[0]))
-                blink(2, 200)
-                mconnect()
-                return True
-    except Exception as e:
-        print(e)
-        print('[-] WiFi not connected to {0}. Retrying in 30 seconds.'.format(SSID))
-        blink(2, 500)
-        return False
-
-def mconnect(do_blink=True):
-    global MC
-    global TOPI
-    try:
-        MC.connect()
-        MC.subscribe(TOPI.encode())
-        print('[+] Connected to MQTT Broker {0}, subscribed to topic {1}.'.format(MQTT, TOPI))
-        if do_blink:
-            blink(3, 200)
-        return True
-    except Exception as e:
-        print(e)
-        print('[-] Connection to MQTT Broker failed.')
-        if do_blink:
-            blink(3, 500)
-        return False
-
-def mqtt_callback(topic, msg):
-    global MC
-    global TOPO
-    global REL
-    topic = topic.decode()
-    msg = msg.decode()
-    if msg in ['0', '1']:
-        REL['state'] = int(REL['on'] == int(msg))
-    elif msg == '2':
-        REL['state'] = 1 - REL['state']
-    elif msg == 'blink':
-        blink()
-    elif msg == 'reset':
-        reset()
-    elif msg == 'state':
-        MC.publish(TOPO.encode(), str(state()).encode())
-    else:
-        return
-
-
-# assign controls
-C.setdefault('REL', Pin(REL['pin'], Pin.OUT, value=load()))
-C.setdefault('LED', Pin(LED['pin'], Pin.OUT, value=LED['off']))
-C.setdefault('BTN', Pin(BTN['pin'], Pin.IN, value=BTN['off']))
-REL['state'] = C['REL'].value()
-blink(count=1, delay=100)
-print('[+] Controls assigned.')
-
-# set control callbacks
-C['BTN'].irq(trigger=Pin.IRQ_FALLING, handler=button_press)
-t_check = Timer(0)
-t_check.init(period=200, mode=Timer.PERIODIC, callback=check)
-print('[+] Control callbacks set.')
-
-# connect to WiFi
-network.WLAN(network.AP_IF).active(False)
-STA = network.WLAN(network.STA_IF)
-STA.active(True)
-mac = hexlify(network.WLAN().config('mac'), ':').decode().replace(':', '')
-HOST += mac[-4:]
-STA.config(dhcp_hostname=HOST)
-connect()
-t_wifi = Timer(1)
-t_wifi.init(period=5000, mode=Timer.PERIODIC, callback=connect)
-
-# set up MQTT Client
-MC = MQTTClient(HOST, MQTT, PORT)
-TOPI = HOST + TOPI
-TOPO = HOST + TOPO
-MC.set_callback(mqtt_callback)
-mconnect()
-
-# main loop
-# for i in range(int(1000/DELAY) * 60 * 60 * 2):  # last only 2 hours, then reset
-while True:
-    try:
-#         sleep_ms(DELAY)
-#         check()
-#         if i % int(5000/DELAY) == 0:  # each 5 seconds
-#             MC.publish(TOPO.encode(), str(state()).encode())
-#         MC.check_msg()
-        MC.wait_msg()
-    except Exception as e:
-        print(e)
-#         connect()
-#         mconnect()
-        break
-
-# reset when main loop ends
-reset()
+print('[i] Entering REPL mode..')
