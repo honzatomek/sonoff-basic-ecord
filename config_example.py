@@ -1,4 +1,6 @@
 # example of config.py file, input correct values and rename
+DEBUG = True
+
 WLAN_HOST = 'snf'
 WLAN_SSID = '<wifi_ssid>'
 WLAN_PASS = '<wifi_password>'
